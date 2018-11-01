@@ -9,10 +9,8 @@ import (
 	"os"
 	"strconv"
 
-	tg "github.com/galeone/tfgo"
 	"github.com/gin-gonic/gin"
 	tf "github.com/tensorflow/tensorflow/tensorflow/go"
-	"github.com/tensorflow/tensorflow/tensorflow/go/op"
 )
 
 type Data struct {
@@ -25,9 +23,8 @@ type Sensor struct {
 }
 
 type OriginalResponse struct {
-	XS   []float32 `json:"xs,omitempty"`
-	YS   []float32 `json:"ys,omitempty"`
-	Pred []float32 `json:"predict,omitempty"`
+	XS []float32 `json:"xs"`
+	YS []float32 `json:"ys"`
 }
 
 func main() {
@@ -43,32 +40,18 @@ func main() {
 	*send prediction of the coefficients
 	 */
 	router := gin.Default()
-	root := tg.NewRoot()
-	x, y, err := getTensor(root)
+	xs, ys, err := getTensor()
 	if err != nil {
 		log.Println("get tensor")
 		return
 	}
-	log.Println(x)
-	log.Println(x)
-
-	pred, err := predict(x, root)
-	if err != nil {
-		log.Println("predict", err)
-		return
-	}
-
-	val := tg.Exec(root, []tf.Output{x.Output, y.Output, pred.Output}, nil, &tf.SessionOptions{})
-
-	xs := val[0].Value()
-	ys := val[1].Value()
-	ps := val[2].Value()
+	log.Println(xs.Value())
+	log.Println(ys.Value())
 
 	router.GET("/original", func(c *gin.Context) {
 		respData := &OriginalResponse{
-			XS:   (xs).([]float32),
-			YS:   (ys).([]float32),
-			Pred: (ps).([]float32),
+			XS: (xs.Value()).([]float32),
+			YS: (ys.Value()).([]float32),
 		}
 		data, err := json.Marshal(respData)
 		if err != nil {
@@ -79,10 +62,9 @@ func main() {
 	})
 
 	router.Run(":8001")
-
 }
 
-func getTensor(root *op.Scope) (*tg.Tensor, *tg.Tensor, error) {
+func getTensor() (*tf.Tensor, *tf.Tensor, error) {
 	var (
 		dt Sensor
 		x  []float32
@@ -114,23 +96,23 @@ func getTensor(root *op.Scope) (*tg.Tensor, *tg.Tensor, error) {
 		x = append(x, float32(tmp_x))
 		y = append(y, item.Displacement)
 	}
-	xs := tg.NewTensor(root, tg.Const(root, x))
-	ys := tg.NewTensor(root, tg.Const(root, y))
+
+	xs, err := tf.NewTensor(x)
+	if err != nil {
+		log.Println("convert x")
+		return nil, nil, err
+	}
+
+	ys, err := tf.NewTensor(y)
+	if err != nil {
+		log.Println("convert y")
+		return nil, nil, err
+	}
 
 	return xs, ys, nil
 }
 
-func predict(xs *tg.Tensor, root *op.Scope) (*tg.Tensor, error) {
-	var (
-		four  = tg.NewTensor(root, tg.Const(root, [1]float32{4}))
-		three = tg.NewTensor(root, tg.Const(root, [1]float32{3}))
-		a     = tg.NewTensor(root, tg.Const(root, [1]float32{0.00003}))
-		b     = tg.NewTensor(root, tg.Const(root, [1]float32{-0.003}))
-		c     = tg.NewTensor(root, tg.Const(root, [1]float32{0.11}))
-		d     = tg.NewTensor(root, tg.Const(root, [1]float32{-0.9}))
-		e     = tg.NewTensor(root, tg.Const(root, [1]float32{4}))
-	)
-	y := a.Mul(xs.Pow(four.Output).Output).Add(b.Mul(xs.Pow(three.Output).Output).Output).Add(c.Mul(xs.Square().Output).Output).Add(d.Mul(xs.Output).Output).Add(e.Output)
-	// y := four
-	return y, nil
+func predict(xs *tf.Tensor) (*tf.Tensor, error) {
+	// y :=
+	return nil, nil
 }

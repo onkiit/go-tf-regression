@@ -1,18 +1,12 @@
 package helper
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 )
 
-var (
-	x []string
-	y []float32
-)
-
-func ReadData(filename string, dt interface{}) (interface{}, error) {
+func ReadData(filename string) ([]byte, error) {
 	file, err := os.Open(filename)
 	if err != nil {
 		fmt.Println("read file")
@@ -25,10 +19,5 @@ func ReadData(filename string, dt interface{}) (interface{}, error) {
 		return nil, err
 	}
 
-	if err := json.Unmarshal(byteFile, &dt); err != nil {
-		fmt.Println("unmarshal")
-		return nil, err
-	}
-
-	return dt, nil
+	return byteFile, nil
 }

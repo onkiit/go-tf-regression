@@ -3,10 +3,9 @@ package main
 import (
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"go-tf-regression/helper"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 
 	tg "github.com/galeone/tfgo"
@@ -30,6 +29,10 @@ type OriginalResponse struct {
 	Pred []float32 `json:"predict,omitempty"`
 }
 
+const (
+	iteration = 100
+)
+
 func main() {
 	/*
 	*get data sensor v
@@ -49,8 +52,6 @@ func main() {
 		log.Println("get tensor")
 		return
 	}
-	log.Println(x)
-	log.Println(x)
 
 	pred, err := predict(x, root)
 	if err != nil {
@@ -58,7 +59,7 @@ func main() {
 		return
 	}
 
-	val := tg.Exec(root, []tf.Output{x.Output, y.Output, pred.Output}, nil, &tf.SessionOptions{})
+	val := tg.Exec(root.SubScope("execution"), []tf.Output{x.Output, y.Output, pred.Output}, nil, &tf.SessionOptions{})
 
 	xs := val[0].Value()
 	ys := val[1].Value()
@@ -88,16 +89,12 @@ func getTensor(root *op.Scope) (*tg.Tensor, *tg.Tensor, error) {
 		x  []float32
 		y  []float32
 	)
-	sensorFile, err := os.Open("data.json")
-	if err != nil {
-		fmt.Println("read file")
-		return nil, nil, nil
-	}
+	filename := "data.json"
 
-	byteSensor, err := ioutil.ReadAll(sensorFile)
+	byteSensor, err := helper.ReadData(filename)
 	if err != nil {
-		fmt.Println("read all")
-		return nil, nil, nil
+		log.Println("byte err")
+		return nil, nil, err
 	}
 
 	if err := json.Unmarshal(byteSensor, &dt); err != nil {
@@ -114,23 +111,41 @@ func getTensor(root *op.Scope) (*tg.Tensor, *tg.Tensor, error) {
 		x = append(x, float32(tmp_x))
 		y = append(y, item.Displacement)
 	}
-	xs := tg.NewTensor(root, tg.Const(root, x))
-	ys := tg.NewTensor(root, tg.Const(root, y))
+	xs := tg.NewTensor(root.SubScope("xs"), tg.Const(root.SubScope("x"), x))
+	ys := tg.NewTensor(root.SubScope("ys"), tg.Const(root.SubScope("y"), y))
 
 	return xs, ys, nil
 }
 
 func predict(xs *tg.Tensor, root *op.Scope) (*tg.Tensor, error) {
 	var (
-		four  = tg.NewTensor(root, tg.Const(root, [1]float32{4}))
-		three = tg.NewTensor(root, tg.Const(root, [1]float32{3}))
-		a     = tg.NewTensor(root, tg.Const(root, [1]float32{0.00003}))
-		b     = tg.NewTensor(root, tg.Const(root, [1]float32{-0.003}))
-		c     = tg.NewTensor(root, tg.Const(root, [1]float32{0.11}))
-		d     = tg.NewTensor(root, tg.Const(root, [1]float32{-0.9}))
-		e     = tg.NewTensor(root, tg.Const(root, [1]float32{4}))
+		four  = tg.NewTensor(root.SubScope("pow"), tg.Const(root.SubScope("const"), [1]float32{4}))
+		three = tg.NewTensor(root.SubScope("pow"), tg.Const(root.SubScope("const"), [1]float32{3}))
+		a     = tg.NewTensor(root.SubScope("coef"), tg.Const(root.SubScope("const"), [1]float32{0.00003}))
+		b     = tg.NewTensor(root.SubScope("coef"), tg.Const(root.SubScope("const"), [1]float32{-0.003}))
+		c     = tg.NewTensor(root.SubScope("coef"), tg.Const(root.SubScope("const"), [1]float32{0.11}))
+		d     = tg.NewTensor(root.SubScope("coef"), tg.Const(root.SubScope("const"), [1]float32{-0.9}))
+		e     = tg.NewTensor(root.SubScope("coef"), tg.Const(root.SubScope("const"), [1]float32{4}))
 	)
 	y := a.Mul(xs.Pow(four.Output).Output).Add(b.Mul(xs.Pow(three.Output).Output).Output).Add(c.Mul(xs.Square().Output).Output).Add(d.Mul(xs.Output).Output).Add(e.Output)
-	// y := four
+
 	return y, nil
+}
+
+func getLoss(predict *tg.Tensor, label *tg.Tensor) *tg.Tensor {
+	loss := predict.Substract(label.Output)
+	return loss
+}
+
+func trainData(xs *tg.Tensor, ys *tg.Tensor, root *op.Scope) {
+	learningRate := op.Const(root.SubScope("rate"), [1]float32{0.01})
+	for i := 0; i < iteration; i++ {
+		pred, err := predict(xs, root)
+		if err != nil {
+			log.Println("predict", err)
+			return
+		}
+
+		_ = op.ResourceApplyAdam(root.SubScope("optimizer"), pred.Output, pred.Output, pred.Output, pred.Output, pred.Output, learningRate, pred.Output, pred.Output, pred.Output, pred.Output)
+	}
 }
